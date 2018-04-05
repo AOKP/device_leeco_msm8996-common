@@ -62,6 +62,7 @@ on init
 on fs
     wait /dev/block/platform/soc/${ro.boot.bootdevice}
     symlink /dev/block/platform/soc/${ro.boot.bootdevice} /dev/block/bootdevice
+    restorecon_recursive /dev/block/platform/soc/${ro.boot.bootdevice}
 
     mount_all fstab.qcom --early
 
@@ -283,19 +284,11 @@ on post-fs-data
     mkdir /data/misc/SelfHost/Running/ 2750 system shell
     mkdir /data/misc/SelfHost/socket/ 2770 system system
 
-    #Create PERFD deamon related dirs
-    mkdir /data/vendor/perfd 0770 root system
-    chmod 2770 /data/vendor/perfd
-    rm /data/vendor/perfd/default_values
-
     # NFC local data and nfcee xml storage
     mkdir /data/nfc 0770 nfc nfc
     mkdir /data/nfc/param 0770 nfc nfc
     mkdir /data/vendor/nfc 0770 nfc nfc
     mkdir /data/vendor/nfc/param 0770 nfc nfc
-
-    #Create IOP  deamon related dirs
-    mkdir /data/vendor/iop 0770 root system
 
     # Mark the copy complete flag to not completed
     write /data/vendor/radio/copy_complete 0
@@ -512,7 +505,7 @@ on boot
     # an ack packet comes out of order
     write /proc/sys/net/netfilter/nf_conntrack_tcp_be_liberal 1
 
-    # Set the console loglevel to < KERN_INFO
+    # Set the console loglevel to KERN_INFO
     # Set the default message loglevel to KERN_INFO
     write /proc/sys/kernel/printk "6 6 1 7"
 
@@ -575,6 +568,10 @@ on boot
     chmod 660 /sys/class/leds/green/start_idx
     chmod 660 /sys/class/leds/blue/start_idx
 
+    #Quickset IR
+    chown system system /sys/remote/enable
+    chmod 0666 /sys/remote/enable
+
     # Don't reset entire SoC on individual subsystem crash
     write /sys/bus/msm_subsys/devices/subsys0/restart_level "related"
     write /sys/bus/msm_subsys/devices/subsys1/restart_level "related"
@@ -584,17 +581,28 @@ on boot
     write /sys/bus/msm_subsys/devices/subsys5/restart_level "related"
 
 on property:sys.boot_completed=1
-    write /dev/kmsg "Boot completed "
+    write /dev/kmsg "Boot completed"
     # end boot time fs tune
-    write /sys/block/sda/queue/read_ahead_kb 512
-    write /sys/block/sda/queue/nr_requests 512
-    write /sys/block/sda/queue/iostats 1
+    write /sys/block/sda/queue/read_ahead_kb 128
+    write /sys/block/sda/queue/nr_requests 128
+    write /sys/block/sda/queue/iostats 0
+
     # CPE fw_name used by sound trigger HAL
     chown media audio /sys/kernel/wcd_cpe0/fw_name
+
     # Enable ZRAM on boot_complete
     swapon_all /fstab.qcom
     # Enable hvdcp
     setprop persist.hvdcp.allow_opti 1
+    #Enable Battery save
+    setprop persist.battery.save 1
+
+# fingerprint service
+service fingerprintd /system/bin/fingerprintd
+    class late_start
+    user system
+    group system
+    writepid /dev/cpuset/system-background/tasks
 
 # start camera server as daemon
 service qcamerasvr /system/bin/mm-qcamera-daemon
@@ -630,15 +638,7 @@ service qseecomd /vendor/bin/qseecomd
    group root
    writepid /dev/cpuset/system-background/tasks
 
-service perfd /vendor/bin/perfd
-   class main
-   user root
-   group root readproc
-   disabled
-   socket perfd seqpacket 0666 root system
-   writepid /dev/cpuset/system-background/tasks
-
-service thermal-engine /vendor/bin/thermal-engine
+service thermal-engine /vendor/bin/thermal-engine -c ${sys.qcom.thermalcfg:-/vendor/etc/thermal-engine.conf}
    class main
    user root
    socket thermal-send-client stream 0666 system system
@@ -747,13 +747,6 @@ service mdtpd /system/vendor/bin/mdtpd
     user root
     group system radio drmrpc
 
-service iop /system/vendor/bin/iop
-    class main
-    user root
-    group root
-    disabled
-    socket iop seqpacket 0666 root system
-
 service ssr_setup /system/bin/ssr_setup
     oneshot
     disabled
@@ -812,13 +805,14 @@ on property:persist.env.fastdorm.enabled=true
 service cnd /vendor/bin/cnd
     class main
     socket cnd stream 660 root inet
-    group root
+    group root wakelock
     writepid /dev/cpuset/system-background/tasks
 
 service dpmQmiMgr /system/vendor/bin/dpmQmiMgr
     class main
     user system
     group system
+    writepid /dev/cpuset/system-background/tasks
 
 service irsc_util /vendor/bin/irsc_util "/vendor/etc/sec_config"
     class core
@@ -974,18 +968,31 @@ on property:ro.data.large_tcp_window_size=true
 service ril-daemon /vendor/bin/hw/rild
     class main
     user radio
-    group radio cache inet misc audio log readproc wakelock oem_2901 net_raw
+    group radio cache inet misc audio log readproc wakelock oem_2901 net_raw wakelock
     capabilities BLOCK_SUSPEND NET_ADMIN NET_RAW
 
 service ril-daemon2 /vendor/bin/hw/rild -c 2
     class main
     user radio
-    group radio cache inet misc audio log readproc wakelock oem_2901 net_raw
+    group radio cache inet misc audio log readproc wakelock oem_2901 net_raw wakelock
     capabilities BLOCK_SUSPEND NET_ADMIN NET_RAW
     disabled
 
 on property:persist.radio.multisim.config=dsds
     enable ril-daemon2
+service hvdcp_opti /vendor/bin/hvdcp_opti
+    class main
+    user root
+    group root
+    seclabel u:r:hvdcp:s0
+
+service charger /charger
+    class charger
+    group system graphics
+    seclabel u:r:charger:s0
+
+on charger
+    start hvdcp_opti
 
 service ssr_diag /system/bin/ssr_diag
     class late_start
@@ -1005,7 +1012,7 @@ service msm_irqbalance /system/bin/msm_irqbalance -f /system/vendor/etc/msm_irqb
     disabled
     writepid /dev/cpuset/system-background/tasks
 
-service qseeproxydaemon /vendor/bin/qseeproxydaemon
+isysted /dev/cpuset/system-background/tasksmervice qseeproxydaemon /vendor/bin/qseeproxydaemon
     class late_start
     user system
     group system
@@ -1017,22 +1024,20 @@ service qcom-sh /system/bin/sh /init.qcom.sh
     oneshot
     seclabel u:r:qti_init_shell:s0
 
-service hvdcp_opti /vendor/bin/hvdcp_opti
-    class main
-    user root
-    group root
-    seclabel u:r:hvdcp:s0
-
-service charger /charger
-    class charger
-    group system graphics
-    seclabel u:r:charger:s0
-
-on charger
-    start hvdcp_opti
-
 on property:persist.sys.le_fast_chrg_enable=1
     write /sys/class/power_supply/le_ab/le_quick_charge_mode 0
 
 on property:persist.sys.le_fast_chrg_enable=0
     write /sys/class/power_supply/le_ab/le_quick_charge_mode 1
+
+on property:persist.battery.save=1
+    write /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor "interactive"
+    write /sys/devices/system/cpu/cpu1/cpufreq/scaling_governor "interactive"
+    write /sys/devices/system/cpu/cpu2/cpufreq/scaling_governor "interactive"
+    write /sys/devices/system/cpu/cpu3/cpufreq/scaling_governor "interactive"
+
+on property:persist.battery.save=0
+    write /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor "performance"
+    write /sys/devices/system/cpu/cpu1/cpufreq/scaling_governor "performance"
+    write /sys/devices/system/cpu/cpu2/cpufreq/scaling_governor "performance"
+    write /sys/devices/system/cpu/cpu3/cpufreq/scaling_governor "performance"
