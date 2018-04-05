@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+/*
+** Copyright 2013, The Android Open Source Project
+**
+** Licensed under the Apache License, Version 2.0 (the "License");
+** you may not use this file except in compliance with the License.
+** You may obtain a copy of the License at
+**
+**     http://www.apache.org/licenses/LICENSE-2.0
+**
+** Unless required by applicable law or agreed to in writing, software
+** distributed under the License is distributed on an "AS IS" BASIS,
+** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+** See the License for the specific language governing permissions and
+** limitations under the License.
+*/
+-->
+
+<resources xmlns:xliff="urn:oasis:names:tc:xliff:document:1.2">
+    <!-- Whether WiFi display is supported by this device.
+       There are many prerequisites for this feature to work correctly.
+       Here are a few of them:
+         * The WiFi radio must support WiFi P2P.
+         * The WiFi radio must support concurrent connections to the WiFi display and
+         to an access point.
+         * The Audio Flinger audio_policy.conf file must specify a rule for the "r_submix"
+         remote submix module.  This module is used to record and stream system
+         audio output to the WiFi display encoder in the media server.
+         * The remote submix module "audio.r_submix.default" must be installed on the device.
+         * The device must be provisioned with HDCP keys (for protected content). -->
+    <bool name="config_enableWifiDisplay">true</bool>
+    <bool name="config_dozeAlwaysOnDisplayAvailable">true</bool>
+    <bool name="config_displayBlanksAfterDoze">true</bool>
+       <!-- Default values for LiveDisplay -->
+    <integer name="config_nightColorTemperature">5000</integer>
+    <integer name="config_outdoorAmbientLux">20000</integer>
+
+    <!-- These values should map to the true min and max
+         that the backend is capable of adjusting to. This
+         is more important when using the ColorBalance mode,
+         as the discrete adjustment is interpolated between
+         this range (with config_dayColorTemperature at zero) -->
+    <integer name="config_minColorTemperature">2500</integer>
+    <integer name="config_maxColorTemperature">25000</integer>
+
+    <!-- Disable this by default, since it's actually using the QC FOSS algorithm for
+         OLED displays and can cause a bit of discoloration. Reinvestigate after tuning -->
+    <bool name="config_defaultCABC">false</bool>
+
+    <!-- Use default display mode -->
+    <integer name="config_defaultLiveDisplayMode">0</integer>
+
+    <!-- Display mode remapping table.
+         If the mode names returned by the backend do not match
+         the predefined and translated strings in the Settings
+         app, they can be remapped here. The format is
+         "oldname:newname", one per entry. -->
+    <string-array name="config_displayModeMappings" translatable="false">
+        <item>default:standard</item>
+        <item>xianyan:dynamic</item>
+        <item>ziran:photography</item>
+        <item>rouhe:basic</item>
+        <item>movie:cinema</item>
+    </string-array>
+
+    <!-- Should we filter any display modes which are unampped? -->
+    <bool name="config_filterDisplayModes">true</bool>
+</resources>
